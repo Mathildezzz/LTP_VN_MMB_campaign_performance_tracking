@@ -1,6 +1,8 @@
 delete tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table;
 insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table 
 
+
+
  WITH reservations AS (
       SELECT rev.campaign_code,
              rev.agent_id                   AS partner,
@@ -469,7 +471,7 @@ LEFT JOIN reservations
 LEFT JOIN base_7
     on base_7.store_id = base_0.store_id
     and base_7.campaign_code = base_0.campaign_code
-    and base_7.event_id = reservations.event_id
+    and base_7.event_id = base_0.event_id
 LEFT JOIN base_30
     on base_30.store_id = base_0.store_id
     and base_30.campaign_code = base_0.campaign_code
@@ -486,4 +488,6 @@ LEFT JOIN(
     and date(cb.redeemed_time)=base_0.date_id
     AND base_0.campaign_type = 'LTP'
 ;
+
+
 

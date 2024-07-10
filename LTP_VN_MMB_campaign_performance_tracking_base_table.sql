@@ -1,7 +1,8 @@
 delete tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table;
 insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table 
 
-
+-- drop table if exists tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table;
+-- create table tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table as 
 
  WITH reservations AS (
       SELECT rev.campaign_code,
@@ -50,6 +51,7 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
             on lvm.campaign_code = rev.campaign_code
         WHERE lvm.campaign_code is not null
           and res_status = '已核销'
+
         )
 ,CTE_trans_0 AS (
     SELECT agent_id,
@@ -106,22 +108,23 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
      GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
          
         )
+        
  ,CTE_trans_7 AS (
     SELECT agent_id,
-           distributor,
-           region,
-           partner,
-           city,
-           store_id,
-           store_name,
-           event_id,
-           event_dt,
-           source_type,
-           CTE.member_id,
+          distributor,
+          region,
+          partner,
+          city,
+          store_id,
+          store_name,
+          event_id,
+          event_dt,
+          source_type,
+          CTE.member_id,
             trans_7.crm_member_id as crm_member_id_7,
             trans_7.initial_purchase as initial_purchase_7,
-           campaign_code,
-           campaign_type,
+          campaign_code,
+          campaign_type,
           new_member_tag,
           CASE WHEN trans_7.crm_member_id IS NULL THEN 0 ELSE 1 END                                            AS converted_7_days,
           CASE WHEN trans_7.initial_purchase = 1 THEN 1 ELSE 0 END                                             AS converted_is_initial_7_dyas,
@@ -166,12 +169,13 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
       ------------------
      GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
         )
-
+        
+        
 ,CTE_trans_30 AS (
     SELECT agent_id,
-           distributor,
-           region,
-           partner,
+          distributor,
+          region,
+          partner,
           city,
           store_id,
           store_name,
@@ -225,6 +229,7 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
      GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
         )
         
+          
 ,base_0 as(    
     SELECT cte.campaign_type,
         cte.agent_id,
@@ -465,17 +470,20 @@ SELECT
 
 FROM base_0
 LEFT JOIN reservations
-   on base_0.campaign_code = reservations.campaign_code
+  on base_0.campaign_code = reservations.campaign_code
     and base_0.store_id = reservations.store_id
     and base_0.event_id = reservations.event_id
 LEFT JOIN base_7
     on base_7.store_id = base_0.store_id
     and base_7.campaign_code = base_0.campaign_code
     and base_7.event_id = base_0.event_id
+    and base_7.date_id = base_0.date_id
 LEFT JOIN base_30
     on base_30.store_id = base_0.store_id
     and base_30.campaign_code = base_0.campaign_code
     and base_30.event_id = base_0.event_id
+       and base_30.date_id = base_0.date_id
+
 LEFT JOIN(
     SELECT redeemed_channel_code,
           count(distinct member_detail_id) as member_count,
@@ -488,6 +496,3 @@ LEFT JOIN(
     and date(cb.redeemed_time)=base_0.date_id
     AND base_0.campaign_type = 'LTP'
 ;
-
-
-

@@ -4,7 +4,7 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
 -- drop table if exists tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table;
 -- create table tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table as 
 
- WITH reservations AS (
+WITH reservations AS (
       SELECT rev.campaign_code,
              rev.agent_id                   AS partner,
              rev.store_code                  AS store_id,
@@ -14,9 +14,9 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
     WHERE res_status <> '已取消'
       AND source_type = 1
     group by 1,2,3,4
-    )
+    ),
     
-     ,CTE AS (
+CTE AS (
        SELECT DISTINCT
                 lvm.campaign_code,
                 lvm.campaign_type,
@@ -34,7 +34,8 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
               type_value      AS member_id,
               res_status,
               mbr.join_time,
-              CASE WHEN DATE(mbr.join_time) = DATE(verification_time) AND  rev.store_code = mbr.eff_reg_store THEN 1 ELSE 0 END AS new_member_tag
+              CASE WHEN DATE(mbr.join_time) = DATE(verification_time) AND  rev.store_code = mbr.eff_reg_store THEN 1 ELSE 0 END AS new_member_tag,
+             CASE WHEN coupon_redeemed.member_detail_id IS NOT NULL THEN 1 ELSE 0 END   AS redeemed_coupon
         FROM edw.d_dl_wmp_campaign_reservation rev
         left join edw.d_dl_phy_store ps
             on ps.lego_store_code=rev.store_code
@@ -49,11 +50,25 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
               ON rev.type_value::integer = mbr.member_detail_id::integer
         left join tutorial.ltp_vn_mbb_campaign_code lvm
             on lvm.campaign_code = rev.campaign_code
+        LEFT JOIN (  SELECT DISTINCT member_detail_id,   date(redeemed_time) AS redeemed_dt, redeemed_channel_code
+                    FROM edw.d_coupon_benefit
+                    WHERE coupon_code = 'Q240065'
+                    AND coupon_status_code = 'redeemed'
+                  ) coupon_redeemed
+               ON DATE(rev.verification_time) = coupon_redeemed.redeemed_dt
+              AND rev.store_code = coupon_redeemed.redeemed_channel_code
+              AND rev.type_value::integer = coupon_redeemed.member_detail_id::integer
+              AND lvm.campaign_type = 'LTP'
         WHERE lvm.campaign_code is not null
           and res_status = '已核销'
-
         )
+    
+                  
+                  
 ,CTE_trans_0 AS (
+SELECT CTE_CTE.*,
+      SUM(sales.order_rrp_amt)                                                                          AS converted_0_days_rrp_amt
+  FROM (
     SELECT agent_id,
            distributor,
            region,
@@ -70,11 +85,11 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
            campaign_code,
            campaign_type,
            new_member_tag,
+           redeemed_coupon,
            campaign_name,
            CASE WHEN trans.crm_member_id IS NULL THEN 0 ELSE 1 END                                            AS converted_0_days,
           CASE WHEN trans.initial_purchase = 1 THEN 1 ELSE 0 END                                             AS converted_is_initial_0_dyas,
-           SUM(trans.trans_cnt)                                                                               AS converted_0_days_order_cnt,
-           SUM(sales.order_rrp_amt)                                                                          AS converted_0_days_rrp_amt
+           SUM(trans.trans_cnt)                                                                               AS converted_0_days_order_cnt
     FROM CTE
     LEFT JOIN (SELECT DISTINCT crm_member_id, 
                       date_id,
@@ -91,7 +106,9 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
            ON CTE.member_id::integer = trans.crm_member_id::integer
           AND DATE(trans.date_id) = DATE(CTE.event_dt) 
           and trans.lego_store_code=CTE.store_id
-    LEFT JOIN (SELECT DISTINCT crm_member_id, 
+     GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+     ) CTE_CTE
+     LEFT JOIN (SELECT DISTINCT crm_member_id, 
                       date_id,
                       lego_store_code,
                       sum(case when sales_qty > 0 then order_rrp_amt else 0 end) - sum(case when sales_qty < 0 then abs(order_rrp_amt) else 0 end) AS order_rrp_amt
@@ -101,15 +118,18 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
                   AND crm_member_id IS NOT NULL
              GROUP BY 1,2,3
              ) sales
-          ON CTE.member_id::integer = sales.crm_member_id::integer
-          AND DATE(sales.date_id) = DATE(CTE.event_dt)
-          and sales.lego_store_code=CTE.store_id
-      ------------------
-     GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
-         
+          ON CTE_CTE.member_id::integer = sales.crm_member_id::integer
+          AND DATE(sales.date_id) = DATE(CTE_CTE.event_dt)
+          and sales.lego_store_code=CTE_CTE.store_id
+       GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21
         )
         
+        
+        
  ,CTE_trans_7 AS (
+ SELECT CTE_CTE.*,
+        SUM(sales_7_day.order_rrp_amt)                                                                     AS converted_7_days_rrp_amt
+    FROM (
     SELECT agent_id,
           distributor,
           region,
@@ -128,8 +148,7 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
           new_member_tag,
           CASE WHEN trans_7.crm_member_id IS NULL THEN 0 ELSE 1 END                                            AS converted_7_days,
           CASE WHEN trans_7.initial_purchase = 1 THEN 1 ELSE 0 END                                             AS converted_is_initial_7_dyas,
-          SUM(trans_7.trans_cnt)                                                                               AS converted_7_days_order_cnt,
-          SUM(sales_7_day.order_rrp_amt)                                                                     AS converted_7_days_rrp_amt
+          SUM(trans_7.trans_cnt)                                                                               AS converted_7_days_order_cnt
            
     FROM CTE
    
@@ -150,8 +169,9 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
           AND DATE(trans_7.date_id) - DATE(CTE.event_dt) <= 7
           AND  DATE(trans_7.date_id) - DATE(CTE.event_dt) >= 0
           and trans_7.lego_store_code=CTE.store_id
-          
-     LEFT JOIN (SELECT DISTINCT crm_member_id, 
+     GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
+     ) CTE_CTE
+      LEFT JOIN (SELECT DISTINCT crm_member_id, 
                       date_id,
                       lego_store_code,
                       sum(case when sales_qty > 0 then order_rrp_amt else 0 end) - sum(case when sales_qty < 0 then abs(order_rrp_amt) else 0 end) AS order_rrp_amt
@@ -161,17 +181,18 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
                   AND crm_member_id IS NOT NULL
              GROUP BY 1,2,3
              ) sales_7_day
-          ON CTE.member_id::integer = sales_7_day.crm_member_id::integer
-          AND DATE(sales_7_day.date_id) - DATE(CTE.event_dt) <= 7
-          AND DATE(sales_7_day.date_id) - DATE(CTE.event_dt) >= 0 
-          and sales_7_day.lego_store_code=CTE.store_id
-
-      ------------------
-     GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
+          ON CTE_CTE.member_id::integer = sales_7_day.crm_member_id::integer
+          AND DATE(sales_7_day.date_id) - DATE(CTE_CTE.event_dt) <= 7
+          AND DATE(sales_7_day.date_id) - DATE(CTE_CTE.event_dt) >= 0 
+          and sales_7_day.lego_store_code=CTE_CTE.store_id
+      GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
         )
         
         
 ,CTE_trans_30 AS (
+SELECT CTE_CTE.*,
+       SUM(sales_30_day.order_rrp_amt)                                                                     AS converted_30_days_rrp_amt
+     FROM (
     SELECT agent_id,
           distributor,
           region,
@@ -190,8 +211,7 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
           new_member_tag,
           CASE WHEN trans_30.crm_member_id IS NULL THEN 0 ELSE 1 END                                            AS converted_30_days,
           CASE WHEN trans_30.initial_purchase = 1 THEN 1 ELSE 0 END                                             AS converted_is_initial_30_dyas,
-          SUM(trans_30.trans_cnt)                                                                               AS converted_30_days_order_cnt,
-          SUM(sales_30_day.order_rrp_amt)                                                                     AS converted_30_days_rrp_amt
+          SUM(trans_30.trans_cnt)                                                                               AS converted_30_days_order_cnt
     FROM CTE
     -- -- ------30days--------
     
@@ -211,22 +231,24 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
           AND DATE(trans_30.date_id) - DATE(CTE.event_dt) <= 30
           AND  DATE(trans_30.date_id) - DATE(CTE.event_dt) >= 0
           and trans_30.lego_store_code=CTE.store_id
-     LEFT JOIN (SELECT DISTINCT crm_member_id, 
-                      date_id,
-                      lego_store_code,
-                      sum(case when sales_qty > 0 then order_rrp_amt else 0 end) - sum(case when sales_qty < 0 then abs(order_rrp_amt) else 0 end) AS order_rrp_amt
-                 FROM edw.f_member_order_detail                                 
-                 WHERE is_rrp_sales_type = 1
-                  AND distributor_name <> 'LBR'
-                  AND crm_member_id IS NOT NULL
-             GROUP BY 1,2,3
-             ) sales_30_day
-          ON CTE.member_id::integer = sales_30_day.crm_member_id::integer
-          AND DATE(sales_30_day.date_id) - DATE(CTE.event_dt) <= 30
-          AND DATE(sales_30_day.date_id) - DATE(CTE.event_dt) >= 0
-          and sales_30_day.lego_store_code=CTE.store_id
-      ------------------
-     GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
+          ) CTE_CTE
+          
+       LEFT JOIN (SELECT DISTINCT crm_member_id, 
+              date_id,
+              lego_store_code,
+              sum(case when sales_qty > 0 then order_rrp_amt else 0 end) - sum(case when sales_qty < 0 then abs(order_rrp_amt) else 0 end) AS order_rrp_amt
+         FROM edw.f_member_order_detail                                 
+         WHERE is_rrp_sales_type = 1
+          AND distributor_name <> 'LBR'
+          AND crm_member_id IS NOT NULL
+     GROUP BY 1,2,3
+     ) sales_30_day
+  ON CTE_CTE.member_id::integer = sales_30_day.crm_member_id::integer
+  AND DATE(sales_30_day.date_id) - DATE(CTE_CTE.event_dt) <= 30
+  AND DATE(sales_30_day.date_id) - DATE(CTE_CTE.event_dt) >= 0
+  and sales_30_day.lego_store_code=CTE_CTE.store_id
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
         )
         
           
@@ -250,6 +272,7 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
         COUNT(DISTINCT cte.member_id)                                                                                      AS ttl_participants,--总参与人数
         COUNT(DISTINCT CASE WHEN cte.new_member_tag = 1 THEN cte.member_id ELSE NULL END)                                  AS ttl_new_participants,--总新会员参与数
         COUNT(DISTINCT CASE WHEN cte.new_member_tag = 0 THEN cte.member_id ELSE NULL END)                                  AS ttl_existing_participants,--总老会员参与数
+        COUNT(DISTINCT CASE WHEN cte.redeemed_coupon = 1 THEN cte.member_id else null end)                                 AS ttl_redeemed_recruitment_bags,
         ------------- 0days--------------    
         COUNT(DISTINCT CASE WHEN converted_0_days = 1 THEN cte.member_id ELSE NULL END)                                            AS converted_member_0_days,--当日内转化会员数
         COUNT(DISTINCT CASE WHEN converted_0_days = 1 AND cte.new_member_tag = 1 THEN cte.member_id ELSE NULL END)                     AS converted_new_member_0_days,--当日内转化新会员数
@@ -263,9 +286,9 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
         SUM(CASE WHEN converted_0_days = 1 AND new_member_tag = 1 THEN converted_0_days_rrp_amt ELSE 0 END)                  AS converted_rrp_amt_new_0_days,--当日内新会员消费额
         SUM(CASE WHEN converted_0_days = 1 AND new_member_tag = 0 THEN converted_0_days_rrp_amt ELSE 0 END)                  AS converted_rrp_amt_existing_0_days,--当日内老会员消费额
         
-        converted_rrp_amt_0_days*1.0/NULLIF(converted_member_0_days, 0)                                                                 as converted_member_aspp_0_days,--会员ASPP
-        converted_rrp_amt_new_0_days*1.0/NULLIF(ttl_new_participants, 0)                                                                as converted_new_member_aspp_0_days, --新会员ASPP
-        converted_rrp_amt_existing_0_days*1.0/NULLIF(ttl_existing_participants, 0)                                                      as converted_existing_member_aspp_0_days, --老会员ASPP
+        converted_rrp_amt_0_days*1.0/NULLIF(converted_member_0_days, 0)                                                      as converted_member_aspp_0_days,--会员ASPP
+        converted_rrp_amt_new_0_days*1.0/NULLIF(converted_new_member_0_days, 0)                                              as converted_new_member_aspp_0_days, --新会员ASPP
+        converted_rrp_amt_existing_0_days*1.0/NULLIF(converted_existing_member_0_days, 0)                                    as converted_existing_member_aspp_0_days, --老会员ASPP
         
         SUM(CASE WHEN converted_0_days = 1 THEN converted_0_days_order_cnt ELSE 0 END)                                         AS converted_order_cnt_0_days,--当日内会员订单数
         SUM(CASE WHEN converted_0_days = 1 AND new_member_tag = 1 THEN converted_0_days_order_cnt ELSE 0 END)                  AS converted_order_cnt_new_0_days,--当日内新会员订单数
@@ -277,7 +300,7 @@ insert into tutorial.LTP_VN_MMB_campaign_performance_tracking_base_table
         
         COUNT(DISTINCT CASE WHEN converted_0_days = 1 AND converted_is_initial_0_dyas = 1 THEN cte.member_id ELSE NULL END)        AS converted_initial_member_0_days,--当日内转化首购会员数
         COUNT(DISTINCT CASE WHEN converted_0_days = 1 AND converted_is_initial_0_dyas = 0 THEN cte.member_id ELSE NULL END)        AS converted_repurchase_member_0_days--当日内转化复购会员数
-      
+     
     FROM CTE_trans_0 cte
     group by 1,2,3,4,5,6,7,8,9,10,11,12,13
     -- ,10
@@ -377,7 +400,7 @@ SELECT
     ttl_scheduling_check                                                                                       AS ttl_reservation_participants, --预约且签到
     ttl_check                                                                                                  AS ttl_walkin_participants,--预约
     ttl_participants                                                                                           AS ttl_participants,--总参与人数
-    cb.member_count                                                                                            as ttl_redeemed_recruitment_bags,--总核销人数
+    ttl_redeemed_recruitment_bags                                                                              as ttl_redeemed_recruitment_bags,--总核销人数
     ttl_new_participants                                                                                       AS new_participants,
     ttl_existing_participants                                                                                  AS existing_participants,
           ------------- 0days--------------    
@@ -422,8 +445,8 @@ SELECT
     converted_rrp_amt_existing_7_days,
     
     converted_rrp_amt_7_days*1.0/NULLIF(converted_member_7_days, 0)                                                                 as converted_member_aspp_7_days,--会员ASPP
-    converted_rrp_amt_new_7_days*1.0/NULLIF(ttl_new_participants, 0)                                                                as converted_new_member_aspp_7_days, --新会员ASPP
-    converted_rrp_amt_existing_7_days*1.0/NULLIF(ttl_existing_participants, 0)                                                      as converted_existing_member_aspp_7_days, --老会员ASPP
+    converted_rrp_amt_new_7_days*1.0/NULLIF(converted_new_member_7_days, 0)                                                                as converted_new_member_aspp_7_days, --新会员ASPP
+    converted_rrp_amt_existing_7_days*1.0/NULLIF(converted_existing_member_7_days, 0)                                                      as converted_existing_member_aspp_7_days, --老会员ASPP
         
     converted_order_cnt_7_days,
     converted_order_cnt_new_7_days,
@@ -451,8 +474,8 @@ SELECT
     converted_rrp_amt_existing_30_days,
     
     converted_rrp_amt_30_days*1.0/NULLIF(converted_member_30_days, 0)                                                                as converted_member_aspp_30_days,--会员ASPP
-    converted_rrp_amt_new_30_days*1.0/NULLIF(ttl_new_participants, 0)                                                                as converted_new_member_aspp_30_days, --新会员ASPP
-    converted_rrp_amt_existing_30_days*1.0/NULLIF(ttl_existing_participants, 0)                                                      as converted_existing_member_aspp_30_days, --老会员ASPP
+    converted_rrp_amt_new_30_days*1.0/NULLIF(converted_new_member_30_days, 0)                                                                as converted_new_member_aspp_30_days, --新会员ASPP
+    converted_rrp_amt_existing_30_days*1.0/NULLIF(converted_existing_member_30_days, 0)                                                      as converted_existing_member_aspp_30_days, --老会员ASPP
         
     converted_order_cnt_30_days,
     converted_order_cnt_new_30_days,
@@ -482,17 +505,5 @@ LEFT JOIN base_30
     on base_30.store_id = base_0.store_id
     and base_30.campaign_code = base_0.campaign_code
     and base_30.event_id = base_0.event_id
-       and base_30.date_id = base_0.date_id
-
-LEFT JOIN(
-    SELECT redeemed_channel_code,
-          count(distinct member_detail_id) as member_count,
-          date(redeemed_time) as redeemed_time
-    FROM edw.d_coupon_benefit
-    WHERE coupon_code = 'Q240065'
-    AND coupon_status_code = 'redeemed'
-    group by 1,3
-)cb on cb.redeemed_channel_code=base_0.store_id
-    and date(cb.redeemed_time)=base_0.date_id
-    AND base_0.campaign_type = 'LTP'
+       and base_30.date_id = base_0.date_id;
 ;

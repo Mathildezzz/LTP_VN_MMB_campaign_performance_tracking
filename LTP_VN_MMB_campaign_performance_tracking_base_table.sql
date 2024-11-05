@@ -61,6 +61,7 @@ CTE AS (
               AND lvm.campaign_type = 'LTP'
         WHERE lvm.campaign_code is not null
           and res_status = '已核销'
+          and ps.distributor LIKE '%LCS%'   ------------ 只看LCS
         )
     
                   
@@ -506,4 +507,3 @@ LEFT JOIN base_30
     and base_30.campaign_code = base_0.campaign_code
     and base_30.event_id = base_0.event_id
        and base_30.date_id = base_0.date_id;
-;
